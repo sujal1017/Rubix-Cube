@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rubik’s Cube Solver</title>
+  <!-- Kociemba two-phase solver (Cube.js): load from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/cubejs@4.0.3/lib/cube.min.js"></script>
+  <style>
+    :root {
+      --cube-white: #ffffff;
+      --cube-yellow: #ffeb3b;
+      --cube-red: #ee1c23;
+      --cube-orange: #ff8200;
+      --cube-green: #009b48;
+      --cube-blue: #0045ad;
+      --color-border: #a7a9a9;
+      --color-primary: #009b48;
+      --color-surface: #f9f9f6;
+      --color-text: #19343b;
+      --color-focus-ring: rgba(33,128,141,0.4);
+      --font-family-base: "Segoe UI", "Inter", Arial, sans-serif;
+      --font-size-base: 14px;
+      --font-weight-semibold: 600;
+      --radius-base: 8px;
+      --radius-sm: 6px;
+      --radius-lg: 12px;
+      --radius-full: 9999px;
+      --space-4: 4px;
+      --space-8: 8px;
+      --space-12: 12px;
+      --space-16: 16px;
+      --space-22: 22px;
+      --space-24: 24px;
+      --space-32: 32px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    html {
+      font-family: var(--font-family-base);
+      font-size: var(--font-size-base);
+      background: var(--color-surface);
+      color: var(--color-text);
+    }
+    body { margin: 0; }
+    .container { max-width: 540px; margin: auto; padding: var(--space-16);}
+    h1 { font-size: 26px; font-weight: var(--font-weight-semibold); margin-bottom: var(--space-16); }
+    h3 { font-weight: var(--font-weight-semibold); font-size: 18px; margin: var(--space-24) 0 var(--space-12);}
+    /* Palette */
+    .color-palette { display: flex; gap: var(--space-12); margin-bottom: var(--space-16);}
+    .palette-btn {
+      position: relative; width: 40px; height: 40px; border-radius: var(--radius-base);
+      border: 2px solid var(--color-border); cursor: pointer; box-shadow: var(--shadow);
+      outline: none; transition: border 0.2s, box-shadow 0.2s;
+    }
+    .palette-btn.active { outline: 3px solid var(--color-focus-ring); z-index: 1;}
+    .palette-btn.disabled { opacity: 0.4; cursor: not-allowed;}
+    .palette-count {
+      position: absolute; top: 0; right: 0; transform: translate(45%,-35%);
+      width: var(--space-22); height: var(--space-22); border-radius: var(--radius-full);
+      background: var(--color-surface); border: 1px solid var(--color-border);
+      color: var(--color-text); font-size: 11px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; z-index: 2;
+      pointer-events:none;
+    }
+    /* Color classes */
+    .color-W { background-color: var(--cube-white);}
+    .color-Y { background-color: var(--cube-yellow);}
+    .color-R { background-color: var(--cube-red);}
+    .color-O { background-color: var(--cube-orange);}
+    .color-G { background-color: var(--cube-green);}
+    .color-B { background-color: var(--cube-blue);}
+    /* Grid */
+    .grid {
+      display: grid; grid-template-columns: repeat(3, 60px); grid-template-rows: repeat(3, 60px);
+      gap: var(--space-4); margin-bottom: var(--space-12);
+    }
+    .sticker {
+      width: 60px; height: 60px; border: 1px solid var(--color-border);
+      background-color: #f0f0f0; border-radius: var(--radius-sm); cursor: pointer;
+      transition: background 0.2s;
+    }
+    .sticker.center { border: 2px solid var(--cube-green);}
+    /* Face selector */
+    .radio-group { display: flex; gap: var(--space-16); margin-bottom: var(--space-12);}
+    .radio-group label { cursor: pointer; }
+    /* Action buttons */
+    .actions { display: flex; gap: var(--space-8); flex-wrap: wrap; margin-bottom: var(--space-16);}
+    .btn {
+      padding: var(--space-8) var(--space-16);
+      border-radius: var(--radius-base); font-size: 14px; font-weight: 500;
+      border: none; cursor: pointer; box-shadow: var(--shadow);
+      transition: background 0.2s, color 0.2s;
+      margin-bottom: var(--space-4);
+    }
+    .btn--primary { background: var(--cube-green); color: #fff;}
+    .btn--primary:disabled { background: #b1ccc4;}
+    .btn--secondary { background: #e4e4e4; color: var(--color-text);}
+    .btn--outline { background: transparent; border: 1px solid var(--color-border); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    /* Output */
+    .form-control { width: 100%; padding: var(--space-8); border-radius: var(--radius-lg); border: 1px solid var(--color-border);}
+    /* Responsive */
+    @media (max-width:600px){
+      .grid {grid-template-columns:repeat(3, 40px); grid-template-rows:repeat(3,40px);} 
+      .sticker{width:40px; height:40px;} 
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Rubik’s Cube Solver</h1>
+    <main>
+      <!-- Colour palette -->
+      <section>
+        <h3>1. Choose a colour</h3>
+        <div id="palette" class="color-palette"></div>
+      </section>
+      <!-- Face selector -->
+      <section>
+        <h3>2. Select a face</h3>
+        <div id="face-selector" class="radio-group"></div>
+      </section>
+      <!-- Editable 3×3 grid -->
+      <section>
+        <h3>3. Paint stickers</h3>
+        <div id="grid" class="grid"></div>
+      </section>
+      <!-- Actions -->
+      <section class="actions">
+        <button id="undoBtn" class="btn btn--secondary">Undo</button>
+        <button id="redoBtn" class="btn btn--secondary">Redo</button>
+        <button id="clearFaceBtn" class="btn btn--outline">Clear Face</button>
+        <button id="resetBtn" class="btn btn--outline">Reset All</button>
+        <button id="submitBtn" class="btn btn--primary">Submit</button>
+      </section>
+      <!-- Output solution -->
+      <section class="solution">
+        <h3>Solution Algorithm</h3>
+        <textarea id="solutionText" class="form-control" rows="4" readonly placeholder="The solving algorithm will appear here after submitting."></textarea>
+        <p style="font-size: 12px; color: #888; margin-top: 8px">
+          Note: Algorithm uses standard cube notation (R, U, F, L, D, B, with ' for anticlockwise, 2 for double turn).
+        </p>
+      </section>
+    </main>
+  </div>
+  <script>
+    /*****************************************
+     * CONSTANTS & INITIAL STATE
+     *****************************************/
+    const COLORS = {
+      W: { name: 'White', class: 'color-W' },
+      Y: { name: 'Yellow', class: 'color-Y' },
+      R: { name: 'Red', class: 'color-R' },
+      O: { name: 'Orange', class: 'color-O' },
+      G: { name: 'Green', class: 'color-G' },
+      B: { name: 'Blue', class: 'color-B' },
+    };
+    const COLOR_KEYS = Object.keys(COLORS);
+
+    const FACE_ORDER = ['U', 'R', 'F', 'D', 'L', 'B'];
+    const DEFAULT_FACE = 'U';
+
+    const COLOR_TO_FACELET = {
+      W: 'U',
+      Y: 'D',
+      R: 'R',
+      O: 'L',
+      G: 'F',
+      B: 'B',
+    };
+
+    let cubeState = createEmptyCube();
+    let colourRemaining = COLOR_KEYS.reduce((acc, c) => ((acc[c] = 9), acc), {});
+    const undoStack = [];
+    const redoStack = [];
+    const MAX_HISTORY = 2;
+    let currentColour = 'W';
+    let currentFace = DEFAULT_FACE;
+    let solverReady = false;
+
+    /*****************************************
+     * DOM REFERENCES
+     *****************************************/
+    const paletteEl = document.getElementById('palette');
+    const faceSelectorEl = document.getElementById('face-selector');
+    const gridEl = document.getElementById('grid');
+    const solutionText = document.getElementById('solutionText');
+
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    const clearFaceBtn = document.getElementById('clearFaceBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const submitBtn = document.getElementById('submitBtn');
+
+    /*****************************************
+     * INITIAL RENDER
+     *****************************************/
+    renderPalette();
+    renderFaceSelector();
+    renderGrid();
+    updateActionButtons();
+
+    /*****************************************
+     * RENDER FUNCTIONS
+     *****************************************/
+    function renderPalette() {
+      paletteEl.innerHTML = '';
+      COLOR_KEYS.forEach((key) => {
+        const btn = document.createElement('button');
+        btn.className = `palette-btn ${COLORS[key].class}`;
+        btn.type = 'button';
+        btn.dataset.color = key;
+
+        if (key === currentColour) btn.classList.add('active');
+        if (colourRemaining[key] === 0) btn.classList.add('disabled');
+
+        // Badge
+        const badge = document.createElement('span');
+        badge.className = 'palette-count';
+        badge.textContent = colourRemaining[key];
+        btn.appendChild(badge);
+
+        btn.addEventListener('click', () => {
+          if (colourRemaining[key] === 0) return;
+          currentColour = key;
+          renderPalette();
+        });
+
+        paletteEl.appendChild(btn);
+      });
+    }
+
+    function renderFaceSelector() {
+      faceSelectorEl.innerHTML = '';
+      const names = { U: 'Up', R: 'Right', F: 'Front', D: 'Down', L: 'Left', B: 'Back' };
+      FACE_ORDER.forEach((face) => {
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'face';
+        radio.value = face;
+        radio.checked = face === currentFace;
+        radio.addEventListener('change', () => {
+          currentFace = face;
+          renderGrid();
+        });
+
+        label.appendChild(radio);
+        label.appendChild(document.createTextNode(names[face]));
+        faceSelectorEl.appendChild(label);
+      });
+    }
+
+    function renderGrid() {
+      gridEl.innerHTML = '';
+      const faceArr = cubeState[currentFace];
+      faceArr.forEach((c, idx) => {
+        const d = document.createElement('div');
+        d.className = 'sticker';
+        if (idx === 4) d.classList.add('center');
+        if (c) d.classList.add(`color-${c}`);
+        d.addEventListener('click', () => handleStickerClick(idx));
+        gridEl.appendChild(d);
+      });
+    }
+
+    function updateActionButtons() {
+      undoBtn.disabled = undoStack.length === 0;
+      redoBtn.disabled = redoStack.length === 0;
+    }
+
+    /*****************************************
+     * EVENT HANDLERS
+     *****************************************/
+    function handleStickerClick(idx) {
+      const faceArr = cubeState[currentFace];
+      const prevColour = faceArr[idx];
+
+      if (idx === 4 && prevColour && prevColour !== currentColour) {
+        alert('Centre sticker locked. Use Clear Face to reset.');
+        return;
+      }
+
+      if (colourRemaining[currentColour] === 0 && prevColour !== currentColour) {
+        alert('No remaining stickers of this colour.');
+        return;
+      }
+
+      if (prevColour === currentColour) return;
+
+      pushUndoState();
+
+      if (prevColour) colourRemaining[prevColour]++;
+      if (prevColour !== currentColour) colourRemaining[currentColour]--;
+
+      faceArr[idx] = currentColour;
+      redoStack.length = 0;
+
+      renderPalette();
+      renderGrid();
+      updateActionButtons();
+    }
+
+    undoBtn.addEventListener('click', () => {
+      if (!undoStack.length) return;
+      redoStack.push(deepCopy(cubeState));
+      if (redoStack.length > MAX_HISTORY) redoStack.shift();
+      cubeState = undoStack.pop();
+      recomputeCounts();
+      renderPalette();
+      renderGrid();
+      updateActionButtons();
+    });
+
+    redoBtn.addEventListener('click', () => {
+      if (!redoStack.length) return;
+      undoStack.push(deepCopy(cubeState));
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+      cubeState = redoStack.pop();
+      recomputeCounts();
+      renderPalette();
+      renderGrid();
+      updateActionButtons();
+    });
+
+    clearFaceBtn.addEventListener('click', () => {
+      if (!confirm(`Clear the ${currentFace} face?`)) return;
+      pushUndoState();
+      cubeState[currentFace].forEach((c) => {
+        if (c) colourRemaining[c]++;
+      });
+      cubeState[currentFace] = Array(9).fill(null);
+      redoStack.length = 0;
+      renderPalette();
+      renderGrid();
+      updateActionButtons();
+      solutionText.value = '';
+    });
+
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('Reset the entire cube?')) return;
+      cubeState = createEmptyCube();
+      colourRemaining = COLOR_KEYS.reduce((acc, c) => ((acc[c] = 9), acc), {});
+      undoStack.length = 0;
+      redoStack.length = 0;
+      currentFace = DEFAULT_FACE;
+      renderPalette();
+      renderFaceSelector();
+      renderGrid();
+      updateActionButtons();
+      solutionText.value = '';
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      if (!isCubeComplete()) {
+        alert('Cube is incomplete. Please finish painting.');
+        return;
+      }
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Solving…';
+      solutionText.value = 'Solving, please wait…';
+      try {
+        await initSolver();
+        const cube = Cube.fromString(buildFaceletString());
+        const solution = cube.solve();
+        solutionText.value = `${solution}\n\nMove count: ${solution.split(' ').filter(Boolean).length}`;
+      } catch (e) {
+        console.error(e);
+        alert('Error solving cube: ' + e.message);
+        solutionText.value = '';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit';
+      }
+    });
+
+    /*****************************************
+     * UTILITIES
+     *****************************************/
+    function createEmptyCube() {
+      return { U: Array(9).fill(null), R: Array(9).fill(null), F: Array(9).fill(null), D: Array(9).fill(null), L: Array(9).fill(null), B: Array(9).fill(null) };
+    }
+
+    function deepCopy(o) {
+      return JSON.parse(JSON.stringify(o));
+    }
+
+    function pushUndoState() {
+      undoStack.push(deepCopy(cubeState));
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+    }
+
+    function recomputeCounts() {
+      colourRemaining = COLOR_KEYS.reduce((acc, c) => ((acc[c] = 9), acc), {});
+      FACE_ORDER.forEach((f) => cubeState[f].forEach((c) => { if (c) colourRemaining[c]--; }));
+    }
+
+    function isCubeComplete() {
+      return COLOR_KEYS.every((c) => colourRemaining[c] === 0);
+    }
+
+    function buildFaceletString() {
+      let s = '';
+      FACE_ORDER.forEach((face) => {
+        cubeState[face].forEach((c) => (s += COLOR_TO_FACELET[c]));
+      });
+      return s;
+    }
+
+    function initSolver() {
+      if (solverReady) return Promise.resolve();
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          Cube.initSolver(() => {
+            solverReady = true;
+            resolve();
+          });
+        }, 0);
+      });
+    }
+  </script>
+</body>
+</html>
